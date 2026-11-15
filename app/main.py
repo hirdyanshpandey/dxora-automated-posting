@@ -135,7 +135,8 @@ def demo_mode() -> bool:
 def dashboard():
     html = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
     mode = "demo" if demo_mode() else "live"
-    return HTMLResponse(html.replace("__POSTING_MODE__", mode))
+    queue = os.getenv("POSTING_QUEUE_ENABLED", "").lower() == "true"
+    return HTMLResponse(html.replace("__POSTING_MODE__", mode).replace("__QUEUE_MODE__", str(queue).lower()))
 
 
 @app.post("/posting", response_model=PostingResponse)
@@ -162,3 +163,19 @@ async def posting(body: PostingRequest):
         results=results,
         llm_review=review,
     )
+
+
+async def run_destination(name: str, message: str) -> Result:
+    if demo_mode():
+        now = datetime.now(timezone.utc)
+        return Result(platform=name, status="success", date=now.date().isoformat(),
+                      time=now.strftime("%H:%M:%S"))
+    link = LINK.search(message).group().rstrip(".,!?;:)]}")
+    async with make_client() as client:
+        return await publish_one(client, name, dict(TARGETS)[name], message, link)
+
+
+if os.getenv("POSTING_QUEUE_ENABLED", "").lower() == "true":
+    from app.jobs import router
+
+    app.include_router(router)

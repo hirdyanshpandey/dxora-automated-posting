@@ -96,3 +96,25 @@ Open http://localhost:4000/, click **Use sample**, then **Run demo**. Demo mode
 validates the request and simulates the five responses without external calls.
 For real publishing, restart using the live setup above with demo mode unset.
 The dashboard calls the same `POST /posting` endpoint in both modes.
+
+## Queued publishing
+
+Install dependencies, run a local Redis server, and start these in separate shells:
+
+```sh
+POSTING_DEMO_MODE=true celery -A app.queue:worker worker --loglevel=info
+```
+
+```sh
+POSTING_QUEUE_ENABLED=true POSTING_DEMO_MODE=true uvicorn app.main:app --host 127.0.0.1 --port 4000
+```
+
+The dashboard lets you select destinations. It sends one job to `POST /jobs`,
+then polls `GET /jobs/{job_id}`. Each destination has an independent Celery task
+and status. Redis stores jobs and results for 24 hours. If a broker publish fails
+ambiguously, check the destination before resubmitting. No automatic posting
+retry is performed because the provider may have accepted the original request.
+
+For live posting, start the worker with provider environment variables and demo
+mode unset. Keep API and worker demo settings identical. Use only on localhost
+or behind authentication. Existing direct `POST /posting` remains available.

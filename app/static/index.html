@@ -30,7 +30,7 @@ th, td { padding: 11px 10px; border-bottom: 1px solid #343842; vertical-align: t
 .bad { color: #ffb4a7; }
 </style>
 </head>
-<body data-mode="__POSTING_MODE__">
+<body data-mode="__POSTING_MODE__" data-queue="__QUEUE_MODE__">
 <main>
 <header><strong>Publishing dashboard</strong><a href="/docs">API docs</a></header>
 <h1>Automated Multi-Platform Posting</h1>
@@ -40,6 +40,7 @@ th, td { padding: 11px 10px; border-bottom: 1px solid #343842; vertical-align: t
 <label for="message">Message</label>
 <textarea id="message" required maxlength="200" aria-describedby="hint counter" placeholder="Try our new demo https://example.com"></textarea>
 <div class="controls"><small id="hint">Include exactly one HTTP or HTTPS link.</small><small id="counter">0 / 200</small></div>
+<fieldset id="destinations" hidden><legend>Destinations</legend></fieldset>
 <div class="controls"><button class="secondary" type="button" id="sample">Use sample</button><button type="submit" id="publish">Publish</button></div>
 <p id="status" role="status"></p>
 </form>
@@ -59,6 +60,22 @@ const updateCount = () => byId('counter').textContent = Array.from(message.value
 byId('mode').textContent = demo
   ? 'Demo mode • Results are simulated. No external services are contacted.'
   : 'Live mode • This sends the message to destinations configured on this server.';
+const queued = document.body.dataset.queue === 'true';
+if (queued) {
+  const field = byId('destinations');
+  field.hidden = false;
+  for (const name of ['Bluesky', 'Mastodon', 'Slack', 'Discord', 'Telegram']) {
+    const label = document.createElement('label');
+    label.style.display = 'inline-block';
+    label.style.marginRight = '12px';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = name;
+    input.checked = true;
+    label.append(input, ' ' + name);
+    field.append(label);
+  }
+}
 if (demo) publish.textContent = 'Run demo';
 message.addEventListener('input', updateCount);
 byId('sample').addEventListener('click', () => {
@@ -70,7 +87,7 @@ function showResults(data) {
   const rows = data.results.map((result) => {
     const row = document.createElement('tr');
     const values = [
-      result.platform, demo ? 'Simulated' : result.status, '',
+      result.platform, demo && result.status === 'success' ? 'Simulated' : result.status.replaceAll('_', ' '), '',
       demo ? '—' : (result.public_access ? 'Yes' : 'No'),
       result.date && result.time ? result.date + ' ' + result.time : '—',
       result.error || '—'
@@ -102,15 +119,38 @@ byId('compose').addEventListener('submit', async (event) => {
   byId('results').hidden = true;
   byId('status').textContent = demo ? 'Running simulation…' : 'Sending to configured platforms…';
   try {
-    const response = await fetch('/posting', {
+    const platforms = [...document.querySelectorAll('#destinations input:checked')].map(input => input.value);
+    if (queued && !platforms.length) {
+      byId('status').textContent = 'Select at least one platform.';
+      return;
+    }
+    const response = await fetch(queued ? '/jobs' : '/posting', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: message.value })
+      body: JSON.stringify(queued ? { message: message.value, platforms } : { message: message.value })
     });
     const data = await response.json();
     if (!response.ok) {
       const detail = Array.isArray(data.detail) ? data.detail.map(item => item.msg).join(' ') : data.detail;
       byId('status').textContent = detail || 'Request failed. Check the server.';
+      return;
+    }
+    if (queued) {
+      const url = data.status_url;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        const progress = await fetch(url);
+        if (!progress.ok) throw new Error('Status unavailable');
+        const job = await progress.json();
+        showResults({
+          results: job.results.map(row => row.result || row),
+          llm_review: {error: 'Copy review is available in the direct posting flow.'}
+        });
+        const pending = job.results.some(row => ['queued', 'publishing'].includes(row.status));
+        byId('status').textContent = pending ? 'Job running • ' + job.job_id : 'Job finished • ' + job.job_id;
+        if (!pending) return;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      byId('status').textContent = 'Job still running. Check ' + url + ' before resubmitting.';
       return;
     }
     showResults(data);
