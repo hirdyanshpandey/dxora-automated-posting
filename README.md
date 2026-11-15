@@ -83,3 +83,16 @@ The review runs concurrently with the five publishers. It provides feedback only
 Publishers send the original copy, and a review failure does not affect posting
 results. A model review is a private API response without a public post URL.
 The tests mock both successful and failed model responses.
+
+## Browser dashboard
+
+Try the complete form and results flow with no credentials or outbound requests:
+
+```sh
+POSTING_DEMO_MODE=true uvicorn app.main:app --host 127.0.0.1 --port 4000
+```
+
+Open http://localhost:4000/, click **Use sample**, then **Run demo**. Demo mode
+validates the request and simulates the five responses without external calls.
+For real publishing, restart using the live setup above with demo mode unset.
+The dashboard calls the same `POST /posting` endpoint in both modes.

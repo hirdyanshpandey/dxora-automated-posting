@@ -2,10 +2,12 @@ import asyncio
 import os
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal
 
 import httpx
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter, ValidationError, field_validator
 
 from app import platforms
@@ -125,8 +127,30 @@ async def review_copy(client: httpx.AsyncClient, message: str) -> CopyReview:
         return CopyReview(status="failed", error="LLM review could not be completed")
 
 
+def demo_mode() -> bool:
+    return os.getenv("POSTING_DEMO_MODE", "").lower() == "true"
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def dashboard():
+    html = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+    mode = "demo" if demo_mode() else "live"
+    return HTMLResponse(html.replace("__POSTING_MODE__", mode))
+
+
 @app.post("/posting", response_model=PostingResponse)
 async def posting(body: PostingRequest):
+    if demo_mode():
+        now = datetime.now(timezone.utc)
+        return PostingResponse(
+            success=True,
+            results=[
+                Result(platform=name, status="success", date=now.date().isoformat(),
+                       time=now.strftime("%H:%M:%S"))
+                for name, _ in TARGETS
+            ],
+            llm_review=CopyReview(status="disabled"),
+        )
     link = LINK.search(body.message).group().rstrip(".,!?;:)]}")
     async with make_client() as client:
         review, *results = await asyncio.gather(

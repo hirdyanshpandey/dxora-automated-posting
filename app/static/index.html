@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Automated Multi-Platform Posting</title>
+<style>
+:root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #121419; color: #f3f5f4; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 960px; margin: auto; padding: 48px 20px; }
+header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #343842; padding-bottom: 14px; }
+header a, td a { color: #b8ed9b; }
+h1 { font-size: clamp(2rem, 6vw, 3.5rem); line-height: 1.05; margin: 36px 0 16px; max-width: 720px; }
+h2 { font-size: 1.1rem; margin: 0 0 12px; }
+p { color: #bcc2cb; line-height: 1.55; }
+.panel { background: #1c2027; border: 1px solid #343842; border-radius: 14px; padding: 22px; margin-top: 22px; }
+label { display: block; font-weight: 700; margin-bottom: 8px; }
+textarea { width: 100%; min-height: 120px; resize: vertical; padding: 14px; background: #13161b; color: inherit; border: 1px solid #59616d; border-radius: 8px; font: inherit; }
+textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid #b8ed9b; outline-offset: 3px; }
+.controls { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 12px 0 0; flex-wrap: wrap; }
+button { font: inherit; font-weight: 700; border: 0; border-radius: 8px; padding: 10px 16px; cursor: pointer; background: #b8ed9b; color: #112314; }
+button:disabled { opacity: .55; cursor: wait; }
+.secondary { background: #353b46; color: #fff; }
+small, .muted { color: #bcc2cb; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; text-align: left; font-size: .9rem; }
+th, td { padding: 11px 10px; border-bottom: 1px solid #343842; vertical-align: top; }
+.good { color: #b8ed9b; }
+.bad { color: #ffb4a7; }
+</style>
+</head>
+<body data-mode="__POSTING_MODE__">
+<main>
+<header><strong>Publishing dashboard</strong><a href="/docs">API docs</a></header>
+<h1>Automated Multi-Platform Posting</h1>
+<p>Send one message to Bluesky, Mastodon, Slack, Discord, and Telegram.</p>
+<p id="mode"></p>
+<form id="compose" class="panel">
+<label for="message">Message</label>
+<textarea id="message" required maxlength="200" aria-describedby="hint counter" placeholder="Try our new demo https://example.com"></textarea>
+<div class="controls"><small id="hint">Include exactly one HTTP or HTTPS link.</small><small id="counter">0 / 200</small></div>
+<div class="controls"><button class="secondary" type="button" id="sample">Use sample</button><button type="submit" id="publish">Publish</button></div>
+<p id="status" role="status"></p>
+</form>
+<section id="results" class="panel" hidden aria-labelledby="results-heading">
+<h2 id="results-heading">Platform results</h2>
+<div class="table-wrap"><table><thead><tr><th>Platform</th><th>Status</th><th>Post</th><th>Public</th><th>UTC time</th><th>Details</th></tr></thead><tbody id="rows"></tbody></table></div>
+<h2 style="margin-top:22px">LLM copy review</h2>
+<p id="review"></p>
+</section>
+</main>
+<script>
+const byId = (id) => document.getElementById(id);
+const message = byId('message');
+const publish = byId('publish');
+const demo = document.body.dataset.mode === 'demo';
+const updateCount = () => byId('counter').textContent = Array.from(message.value).length + ' / 200';
+byId('mode').textContent = demo
+  ? 'Demo mode • Results are simulated. No external services are contacted.'
+  : 'Live mode • This sends the message to destinations configured on this server.';
+if (demo) publish.textContent = 'Run demo';
+message.addEventListener('input', updateCount);
+byId('sample').addEventListener('click', () => {
+  message.value = 'Explore the latest project demo https://example.com';
+  updateCount();
+  message.focus();
+});
+function showResults(data) {
+  const rows = data.results.map((result) => {
+    const row = document.createElement('tr');
+    const values = [
+      result.platform, demo ? 'Simulated' : result.status, '',
+      demo ? '—' : (result.public_access ? 'Yes' : 'No'),
+      result.date && result.time ? result.date + ' ' + result.time : '—',
+      result.error || '—'
+    ];
+    for (const value of values) row.insertCell().textContent = value;
+    row.cells[1].className = result.status === 'success' ? 'good' : 'bad';
+    row.cells[2].textContent = '—';
+    if (result.posted_url) {
+      const url = new URL(result.posted_url, location.origin);
+      if (url.protocol === 'https:' || url.protocol === 'http:') {
+        const link = document.createElement('a');
+        link.href = url.href;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'Open post';
+        row.cells[2].replaceChildren(link);
+      }
+    }
+    return row;
+  });
+  byId('rows').replaceChildren(...rows);
+  const review = data.llm_review;
+  byId('review').textContent = review.feedback || review.error || 'LLM review is disabled.';
+  byId('results').hidden = false;
+}
+byId('compose').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  publish.disabled = true;
+  byId('results').hidden = true;
+  byId('status').textContent = demo ? 'Running simulation…' : 'Sending to configured platforms…';
+  try {
+    const response = await fetch('/posting', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: message.value })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const detail = Array.isArray(data.detail) ? data.detail.map(item => item.msg).join(' ') : data.detail;
+      byId('status').textContent = detail || 'Request failed. Check the server.';
+      return;
+    }
+    showResults(data);
+    const successful = data.results.filter(result => result.status === 'success').length;
+    byId('status').textContent = demo ? 'Simulation complete.' :
+      successful + ' of ' + data.results.length + ' platforms accepted the message.';
+  } catch {
+    byId('status').textContent = 'Could not load the API response. Check the server before retrying.';
+  } finally {
+    publish.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
