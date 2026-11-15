@@ -30,6 +30,14 @@ class PostingTests(unittest.TestCase):
         def respond(req):
             path = req.url.path
             data = json.loads(req.content) if req.content else {}
+            if path == "/v1/responses":
+                self.assertEqual(data["input"], message)
+                self.assertFalse(data["store"])
+                return httpx.Response(500 if mastodon_status == 429 else 200, json={
+                    "output": [{"type": "message", "content": [
+                        {"type": "output_text", "text": "Explain what readers will find."}
+                    ]}]
+                })
             if path.endswith("createSession"):
                 self.assertEqual(data["identifier"], CONFIG["BLUESKY_HANDLE"])
                 return httpx.Response(200, json={"did": "did:plc:demo", "accessJwt": "test"})
@@ -56,7 +64,7 @@ class PostingTests(unittest.TestCase):
                 return httpx.Response(200, json={"ok": True, "result": {"message_id": 2, "chat": {"type": "channel", "username": "demo"}}})
             self.fail(f"Unexpected route: {path}")
 
-        with patch.dict(os.environ, CONFIG, clear=True), patch(
+        with patch.dict(os.environ, {**CONFIG, "OPENAI_REVIEW_MODEL": "test-model", "OPENAI_API_KEY": "test"}, clear=True), patch(
             "app.main.make_client",
             return_value=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
         ), TestClient(app) as client:
@@ -64,6 +72,7 @@ class PostingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload["success"])
+        self.assertEqual(payload["llm_review"]["status"], "failed" if mastodon_status == 429 else "success")
         expected = {
             "Bluesky": ("https://bsky.app/profile/did:plc:demo/post/123", True),
             "Mastodon": ("https://mastodon.example/@demo/123", True),
@@ -102,5 +111,6 @@ class PostingTests(unittest.TestCase):
             response = client.post("/posting", json={"message": "See https://example.com."})
         payload = response.json()
         self.assertFalse(payload["success"])
+        self.assertEqual(payload["llm_review"]["status"], "disabled")
         self.assertEqual(len(payload["results"]), 5)
         self.assertTrue(all(entry["status"] == "failed" for entry in payload["results"]))

@@ -5,6 +5,6 @@ test_invalid_requests_never_contact_providers (test_posting.PostingTests.test_in
 test_unconfigured_targets_are_reported (test_posting.PostingTests.test_unconfigured_targets_are_reported) ... ok
 
 ----------------------------------------------------------------------
-Ran 3 tests in 0.111s
+Ran 3 tests in 0.132s
 
 OK

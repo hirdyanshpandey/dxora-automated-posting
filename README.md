@@ -70,3 +70,16 @@ python -m unittest discover -s tests -v
 ```
 
 Tests exercise the FastAPI endpoint and all five adapters with mocked provider HTTP responses. They cover a full successful batch, a batch with a rate-limited platform, invalid inputs and missing credentials. See [test-results.txt](test-results.txt). Live posting requires account credentials and was not exercised.
+
+## Optional LLM integration
+
+Set `OPENAI_REVIEW_MODEL` to a model available to your API account and set
+`OPENAI_API_KEY` in `.env`. The configured service then sends the submitted
+message to the [OpenAI Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create)
+with response storage disabled and returns copy feedback in `llm_review`.
+Leave the model unset to disable review and avoid the provider call.
+
+The review runs concurrently with the five publishers. It provides feedback only.
+Publishers send the original copy, and a review failure does not affect posting
+results. A model review is a private API response without a public post URL.
+The tests mock both successful and failed model responses.
