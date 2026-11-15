@@ -36,16 +36,17 @@ async def bluesky(client, message, link):
     origin = "https://bsky.social/xrpc"
     session = await request(client, "POST", f"{origin}/com.atproto.server.createSession",
                             json={"identifier": handle, "password": password})
-    start = len(message[:message.index(link)].encode("utf-8"))
     record = {
         "$type": "app.bsky.feed.post",
         "text": message,
         "createdAt": datetime.now(timezone.utc).isoformat(),
-        "facets": [{
+    }
+    if link:
+        start = len(message[:message.index(link)].encode("utf-8"))
+        record["facets"] = [{
             "index": {"byteStart": start, "byteEnd": start + len(link.encode("utf-8"))},
             "features": [{"$type": "app.bsky.richtext.facet#link", "uri": link}],
-        }],
-    }
+        }]
     post = await request(client, "POST", f"{origin}/com.atproto.repo.createRecord",
                          headers=bearer(session["accessJwt"]),
                          json={"repo": session["did"], "collection": "app.bsky.feed.post", "record": record})

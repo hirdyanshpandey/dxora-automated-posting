@@ -170,7 +170,8 @@ async def run_destination(name: str, message: str) -> Result:
         now = datetime.now(timezone.utc)
         return Result(platform=name, status="success", date=now.date().isoformat(),
                       time=now.strftime("%H:%M:%S"))
-    link = LINK.search(message).group().rstrip(".,!?;:)]}")
+    match = LINK.search(message)
+    link = match.group().rstrip(".,!?;:)]}") if match else None
     async with make_client() as client:
         return await publish_one(client, name, dict(TARGETS)[name], message, link)
 

@@ -118,3 +118,9 @@ retry is performed because the provider may have accepted the original request.
 For live posting, start the worker with provider environment variables and demo
 mode unset. Keep API and worker demo settings identical. Use only on localhost
 or behind authentication. Existing direct `POST /posting` remains available.
+
+Queued text can omit the CTA link. In queued demo mode, choose a photo, video,
+or audio file with or without a caption. The browser previews the file locally
+and sends only its media type to simulate the job. Live media upload and
+provider-specific attachment support are pending. The direct assignment
+endpoint still enforces its CTA requirement.

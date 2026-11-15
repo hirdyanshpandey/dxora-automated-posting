@@ -40,6 +40,12 @@ th, td { padding: 11px 10px; border-bottom: 1px solid #343842; vertical-align: t
 <label for="message">Message</label>
 <textarea id="message" required maxlength="200" aria-describedby="hint counter" placeholder="Try our new demo https://example.com"></textarea>
 <div class="controls"><small id="hint">Include exactly one HTTP or HTTPS link.</small><small id="counter">0 / 200</small></div>
+<div id="media-picker" hidden>
+<label for="media">Photo, video or audio</label>
+<input type="file" id="media" accept="image/*,video/*,audio/*">
+<p id="media-note">Demo previews the selected file locally. The file is not uploaded.</p>
+<div id="media-preview"></div>
+</div>
 <fieldset id="destinations" hidden><legend>Destinations</legend></fieldset>
 <div class="controls"><button class="secondary" type="button" id="sample">Use sample</button><button type="submit" id="publish">Publish</button></div>
 <p id="status" role="status"></p>
@@ -61,7 +67,32 @@ byId('mode').textContent = demo
   ? 'Demo mode • Results are simulated. No external services are contacted.'
   : 'Live mode • This sends the message to destinations configured on this server.';
 const queued = document.body.dataset.queue === 'true';
+let mediaType = null;
+let previewUrl = null;
 if (queued) {
+  message.required = false;
+  byId('hint').textContent = demo ? 'Add text, media, or both. Links are optional.' : 'Links are optional.';
+  byId('media-picker').hidden = !demo;
+  byId('media').addEventListener('change', (event) => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    const file = event.target.files[0];
+    const type = file?.type.split('/')[0];
+    mediaType = ['image', 'video', 'audio'].includes(type) ? type : null;
+    const container = byId('media-preview');
+    container.replaceChildren();
+    if (!mediaType) {
+      if (file) container.textContent = 'Choose a known image, video or audio format.';
+      return;
+    }
+    previewUrl = URL.createObjectURL(file);
+    const preview = document.createElement(mediaType === 'image' ? 'img' : mediaType);
+    preview.src = previewUrl;
+    preview.alt = file.name;
+    if (mediaType !== 'image') preview.controls = true;
+    preview.style.maxWidth = '100%';
+    preview.style.maxHeight = '240px';
+    container.append(preview);
+  });
   const field = byId('destinations');
   field.hidden = false;
   for (const name of ['Bluesky', 'Mastodon', 'Slack', 'Discord', 'Telegram']) {
@@ -127,7 +158,7 @@ byId('compose').addEventListener('submit', async (event) => {
     const response = await fetch(queued ? '/jobs' : '/posting', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(queued ? { message: message.value, platforms } : { message: message.value })
+      body: JSON.stringify(queued ? { message: message.value, platforms, media_type: mediaType } : { message: message.value })
     });
     const data = await response.json();
     if (!response.ok) {

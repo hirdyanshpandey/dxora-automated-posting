@@ -1,16 +1,19 @@
+from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.main import PostingRequest, TARGETS
+from app.main import TARGETS, demo_mode
 from app.queue import publish_destination, worker
 
 router = APIRouter()
 PLATFORMS = tuple(name for name, _ in TARGETS)
 
 
-class QueueRequest(PostingRequest):
+class QueueRequest(BaseModel):
+    message: str = Field(default="", max_length=200)
+    media_type: Literal["image", "video", "audio"] | None = None
     platforms: list[str] = Field(min_length=1, max_length=len(PLATFORMS))
 
 
@@ -30,6 +33,10 @@ def job_key(job_id: UUID) -> str:
 
 @router.post("/jobs", status_code=202)
 def enqueue(body: QueueRequest):
+    if not body.message.strip() and body.media_type is None:
+        raise HTTPException(422, "Enter a message or choose a media file")
+    if body.media_type and not demo_mode():
+        raise HTTPException(422, "Media publishing requires a media-capable connector")
     if len(set(body.platforms)) != len(body.platforms) or not set(body.platforms) <= set(PLATFORMS):
         raise HTTPException(422, "Select distinct supported platforms")
     job = Job(job_id=uuid4(), destinations=[
